@@ -1,6 +1,6 @@
 # Bulanik Mantik ile Akilli Kavsak Simulasyonu
 
-Trafik isiklari icin bulanik mantik tabanli kontrol sistemi. `SimPy` ile simulasyon yapilip sabit sureli kontrol ile karsilastirilmistir.
+Trafik isiklari icin bulanik mantik tabanli kontrol sistemi. SimPy ile simulasyon yapilip sabit sureli kontrol ile karsilastirilmistir.
 
 ## Ne yapar?
 
@@ -8,12 +8,12 @@ Tek bir kavsaktaki trafik akisini simule eder. Iki farkli kontrol yontemi test e
 - **Sabit sureli:** Yesil isik hep ayni sure yanar
 - **Bulanik mantik:** Kuyruk uzunlugu ve bekleme suresine gore yesil sure dinamik olarak degisir
 
-Kuzey-Guney ve Dogu-Bati yonleri icin olusturulan araclarin kuyruk uzunluklari, bekleme sureleri vs karsilastirilir.
+Kuzey-Guney ve Dogu-Bati yonleri icin olusturulan araclarin kuyruk uzunluklari ve bekleme sureleri karsilastirilir.
 
 ## Kullanilan teknolojiler
 
 - Python
-- SimPy (ayrik olay simulasyonu)
+- SimPy
 - pandas
 - matplotlib
 - Streamlit
@@ -23,17 +23,15 @@ Bulanik mantik kurallari projede dogrudan Python ile yazildi, ekstra kutuphane k
 ## Dosyalar
 
 ```
-app.py               - Streamlit arayuzu
-src/fuzzy_controller.py - Bulanik mantik fonksiyonlari
-src/simulation.py     - SimPy simulasyonu
-src/main.py           - Komut satirindan calistirmak icin
+app.py                    - Streamlit arayuzu
+src/fuzzy_controller.py   - Bulanik mantik fonksiyonlari
+src/simulation.py         - SimPy simulasyonu
+src/main.py               - Komut satirindan calistirmak icin
 ```
 
 ## Kurulum
 
 ```bash
-python -m venv .venv
-.venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
