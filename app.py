@@ -14,13 +14,12 @@ from simulation import SimulasyonAyarlari, kontrolleri_karsilastir
 st.set_page_config(page_title="Akilli Kavsak Simulasyonu", layout="wide")
 st.title("Bulanik Mantik Destekli Akilli Kavsak Simulasyonu")
 st.write(
-    "Bu panel, sabit sureli trafik isigi kontrolu ile bulanik mantik tabanli kontrolu "
-    "tek kavsak uzerinde karsilastirmak icin hazirlanmistir."
+    " Ali Alizada - 21703903 "
 )
 
 duration = st.sidebar.slider("Simulasyon suresi (dakika)", min_value=15, max_value=120, value=60, step=5)
 fixed_green = st.sidebar.slider("Sabit yesil isik suresi (sn)", min_value=10, max_value=40, value=20, step=1)
-seed = st.sidebar.number_input("Rastgelelik tohumu", min_value=1, max_value=9999, value=42, step=1)
+seed = st.sidebar.number_input("Seed", min_value=1, max_value=9999, value=42, step=1)
 
 ayarlar = SimulasyonAyarlari(
     simulasyon_suresi_dakika=duration,
@@ -83,7 +82,3 @@ selected_history = selected_history.rename(
 selected_history = selected_history.set_index("Zaman")
 st.line_chart(selected_history)
 
-st.caption(
-    "Not: Bu panel vize icin temel bir gorsellestirme saglar. Final projesinde isi haritasi, "
-    "coklu kavsak ve daha zengin izleme ekranlari eklenebilir."
-)
