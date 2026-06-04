@@ -1,79 +1,184 @@
+# Komut satiri arayuzu. Tum senaryolari calistirir, sonuclari results/final altina yazar.
+# Ornek: py -m src.main --tohum 15 --dakika 60 --ibb data/traffic_density_202501.csv
+
 import argparse
+import json
 from pathlib import Path
+from typing import Dict, List
 
-import matplotlib.pyplot as plt
+import pandas as pd
 
-from simulation import SimulasyonAyarlari, kontrolleri_karsilastir
+from .controllers import (
+    ActuatedController,
+    FixedController,
+    FuzzyController,
+    WebsterController,
+)
+from .data import IBBLoader, ornek_profil_olustur
+from .engine import SenaryoAyarlari, senaryo_calistir
+from .stats import kontrolcu_karsilastirmasi
+from .sumo import sumo_koridor_olustur, sumo_grid_olustur, sumo_tek_kavsak_olustur
+from .viz import (
+    isi_haritasi_olustur,
+    karsilastirma_grafigi,
+    kavsak_animasyonu_olustur,
+    kuyruk_zaman_grafigi,
+    uyelik_fonksiyonu_grafigi,
+)
 
 
-def create_comparison_plot(metrics, output_dir):
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-
-    axes[0].bar(metrics["kontrol_tipi"], metrics["ortalama_bekleme_toplam_saniye"], color=["#d95f02", "#1b9e77"])
-    axes[0].set_title("Ortalama Bekleme Suresi")
-    axes[0].set_ylabel("Saniye")
-
-    axes[1].bar(metrics["kontrol_tipi"], metrics["maksimum_kuyruk_toplam"], color=["#7570b3", "#66a61e"])
-    axes[1].set_title("Maksimum Toplam Kuyruk")
-    axes[1].set_ylabel("Arac Sayisi")
-
-    fig.tight_layout()
-    fig.savefig(output_dir / "controller_comparison.png", dpi=150)
-    plt.close(fig)
+FABRIKALAR = {
+    "Sabit Süreli": FixedController,
+    "Bulanık Mantık": FuzzyController,
+    "Webster": WebsterController,
+    "Aktüe": ActuatedController,
+}
 
 
-def create_queue_plot(histories, output_dir):
-    fig, axes = plt.subplots(2, 1, figsize=(12, 7), sharex=True)
+def _ibb_profilleri_olustur(ibb_csv: Path, ad_listesi: List[str]) -> Dict[str, "IntersectionProfile"]:
+    loader = IBBLoader(ibb_csv)
+    populer = loader.populer_geohashler(ilk_n=max(2 * len(ad_listesi), 20))
+    secilen = populer[: 2 * len(ad_listesi)]
+    if len(secilen) < 2 * len(ad_listesi):
+        raise RuntimeError("Yeterli geohash bulunamadı.")
+    profiller = {}
+    for i, ad in enumerate(ad_listesi):
+        kg = secilen[2 * i].geohash
+        db = secilen[2 * i + 1].geohash
+        profiller[ad] = loader.kavsak_profili_olustur(
+            ad=ad,
+            yon_geohash={"kuzey_guney": kg, "dogu_bati": db},
+            baslangic_saati=7,
+        )
+    return profiller
 
-    sabit_gecmis = histories["sabit"]
-    bulanik_gecmis = histories["bulanik"]
 
-    axes[0].plot(sabit_gecmis["zaman_saniye"], sabit_gecmis["kuzey_guney_kuyruk"], label="Kuzey-Guney Kuyrugu")
-    axes[0].plot(sabit_gecmis["zaman_saniye"], sabit_gecmis["dogu_bati_kuyruk"], label="Dogu-Bati Kuyrugu")
-    axes[0].set_title("Sabit Sureli Kontrol")
-    axes[0].set_ylabel("Arac Sayisi")
-    axes[0].legend()
+def _senaryo_profilleri(topoloji: str, ibb_csv: Path = None):
+    if topoloji == "single":
+        ads = ["K1"]
+    elif topoloji == "corridor":
+        ads = [f"K{i+1}" for i in range(4)]
+    else:
+        ads = ["K11", "K12", "K21", "K22"]
+    if ibb_csv:
+        profiller = _ibb_profilleri_olustur(Path(ibb_csv), ads)
+    else:
+        profiller = {ad: ornek_profil_olustur() for ad in ads}
+    if topoloji == "single":
+        return [profiller["K1"]]
+    if topoloji == "corridor":
+        return [profiller[f"K{i+1}"] for i in range(4)]
+    return profiller
 
-    axes[1].plot(bulanik_gecmis["zaman_saniye"], bulanik_gecmis["kuzey_guney_kuyruk"], label="Kuzey-Guney Kuyrugu")
-    axes[1].plot(bulanik_gecmis["zaman_saniye"], bulanik_gecmis["dogu_bati_kuyruk"], label="Dogu-Bati Kuyrugu")
-    axes[1].set_title("Bulanik Mantik Kontrollu Sistem")
-    axes[1].set_xlabel("Zaman (saniye)")
-    axes[1].set_ylabel("Arac Sayisi")
-    axes[1].legend()
 
-    fig.tight_layout()
-    fig.savefig(output_dir / "queue_history.png", dpi=150)
-    plt.close(fig)
+def senaryo_pipeline(out_dir: Path, topoloji: str, tohum_sayisi: int, dakika: int, ibb_csv: Path = None, yaya_aktif: bool = False):
+    out_dir.mkdir(parents=True, exist_ok=True)
+    profiller = _senaryo_profilleri(topoloji, ibb_csv)
+
+    ayarlar = SenaryoAyarlari(simulasyon_dakika=dakika, yaya_aktif=yaya_aktif)
+    karsilastirma = kontrolcu_karsilastirmasi(
+        topoloji,
+        FABRIKALAR,
+        profiller,
+        tohumlar=list(range(1, tohum_sayisi + 1)),
+        temel_ayarlar=ayarlar,
+    )
+    ozet_df = karsilastirma["ozet_tablosu"]
+    ozet_df.to_csv(out_dir / "ozet.csv", index=False)
+
+    # T-test sonuçları
+    ttest = []
+    for ad, v in karsilastirma["t_test_sonuclari"].items():
+        ttest.append({
+            "kontrolcu": ad,
+            "t": round(v["t"], 3),
+            "df": round(v["df"], 1),
+            "kritik_t": v["kritik_t"],
+            "anlamli_alpha_005": v["anlamli_alpha_005"],
+        })
+    pd.DataFrame(ttest).to_csv(out_dir / "ttest.csv", index=False)
+
+    # Ham çalıştırmalar
+    ham_combined = []
+    for ad, ozet in karsilastirma["ham_sonuclar"].items():
+        df = ozet.ham_calistirmalar.copy()
+        df["kontrolcu"] = ad
+        ham_combined.append(df)
+    pd.concat(ham_combined, ignore_index=True).to_csv(out_dir / "ham_calistirmalar.csv", index=False)
+
+    # Grafikler
+    karsilastirma_grafigi(
+        ozet_df,
+        out_dir / "karsilastirma.png",
+        metrikler=("ortalama_bekleme_sn", "max_kuyruk", "gecis_orani"),
+        baslik=f"{topoloji} – kontrolcü karşılaştırması",
+    )
+
+    # Tek tohum çalıştırıp tarihçe alarak ısı haritası + (single ise) animasyon
+    for ad, fab in FABRIKALAR.items():
+        sonuc = senaryo_calistir(topoloji, fab, profiller, SenaryoAyarlari(simulasyon_dakika=dakika, tohum=1, yaya_aktif=yaya_aktif))
+        sonuc.gecmis.to_csv(out_dir / f"gecmis_{ad.replace(' ', '_')}.csv", index=False)
+        isi_haritasi_olustur(
+            sonuc.gecmis,
+            out_dir / f"isi_{ad.replace(' ', '_')}.png",
+            pencere_saniye=60,
+            baslik=f"{ad} – {topoloji}",
+        )
+        if topoloji == "single":
+            try:
+                kavsak_animasyonu_olustur(
+                    sonuc.gecmis,
+                    out_dir / f"anim_{ad.replace(' ', '_')}.gif",
+                    fps=10,
+                    kare_atlama=20,
+                )
+            except Exception as e:
+                print(f"Animasyon üretilemedi ({ad}):", e)
+
+    # Üyelik fonksiyonları (sabit, tek defa)
+    uyelik_fonksiyonu_grafigi(out_dir / "uyelik_fonksiyonlari.png")
+
+    # SUMO dosyaları
+    sumo_out = out_dir / "sumo"
+    if topoloji == "single":
+        sumo_tek_kavsak_olustur(sumo_out, profiller[0], sure_dakika=dakika)
+    elif topoloji == "corridor":
+        sumo_koridor_olustur(sumo_out, profiller, sure_dakika=dakika)
+    else:
+        sumo_grid_olustur(sumo_out, profiller, sure_dakika=dakika)
+
+    print(f"[{topoloji}] tamam -> {out_dir}")
+    print(ozet_df.to_string(index=False))
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Akilli kavsak simulasyonunu calistirir.")
-    parser.add_argument("--duration", type=int, default=60, help="Simulasyon suresi (dakika).")
-    parser.add_argument("--fixed-green", type=int, default=20, help="Sabit yesil isik suresi (saniye).")
-    parser.add_argument("--seed", type=int, default=42, help="Rastgelelik tohumu.")
-    parser.add_argument("--output-dir", default="results", help="Sonuc dosyalarinin kaydedilecegi klasor.")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--out", default="results/final")
+    parser.add_argument("--ibb", default=None, help="İBB CSV yolu (yoksa sentetik kullanılır)")
+    parser.add_argument("--tohum", type=int, default=10)
+    parser.add_argument("--dakika", type=int, default=60)
+    parser.add_argument("--yaya", action="store_true")
+    parser.add_argument("--hizli", action="store_true", help="3 tohum × 30 dk (hızlı smoke)")
+    parser.add_argument("--topoloji", choices=["single", "corridor", "grid_2x2", "hepsi"], default="hepsi")
     args = parser.parse_args()
 
-    output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    if args.hizli:
+        args.tohum = 3
+        args.dakika = 30
 
-    ayarlar = SimulasyonAyarlari(
-        simulasyon_suresi_dakika=args.duration,
-        sabit_yesil_suresi=args.fixed_green,
-        tohum=args.seed,
-    )
-    metrics, histories = kontrolleri_karsilastir(ayarlar)
+    out_root = Path(args.out)
+    out_root.mkdir(parents=True, exist_ok=True)
 
-    metrics.to_csv(output_dir / "metrics.csv", index=False)
-    histories["sabit"].to_csv(output_dir / "sabit_gecmis.csv", index=False)
-    histories["bulanik"].to_csv(output_dir / "bulanik_gecmis.csv", index=False)
-
-    create_comparison_plot(metrics, output_dir)
-    create_queue_plot(histories, output_dir)
-
-    print("Simulasyon tamamlandi.")
-    print(metrics.to_string(index=False))
-    print(f"\nSonuclar su klasore kaydedildi: {output_dir.resolve()}")
+    topolojiler = ["single", "corridor", "grid_2x2"] if args.topoloji == "hepsi" else [args.topoloji]
+    for t in topolojiler:
+        senaryo_pipeline(
+            out_root / t,
+            topoloji=t,
+            tohum_sayisi=args.tohum,
+            dakika=args.dakika,
+            ibb_csv=args.ibb,
+            yaya_aktif=args.yaya,
+        )
 
 
 if __name__ == "__main__":

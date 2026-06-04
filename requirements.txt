@@ -1,4 +1,7 @@
 simpy
 pandas
+numpy
 matplotlib
 streamlit
+pillow
+python-docx
