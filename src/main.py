@@ -111,7 +111,7 @@ def senaryo_pipeline(out_dir: Path, topoloji: str, tohum_sayisi: int, dakika: in
         ozet_df,
         out_dir / "karsilastirma.png",
         metrikler=("ortalama_bekleme_sn", "max_kuyruk", "gecis_orani"),
-        baslik=f"{topoloji} – kontrolcü karşılaştırması",
+        baslik=f"{topoloji} - kontrolcü karşılaştırması",
     )
 
     # Tek tohum çalıştırıp tarihçe alarak ısı haritası + (single ise) animasyon
@@ -122,7 +122,7 @@ def senaryo_pipeline(out_dir: Path, topoloji: str, tohum_sayisi: int, dakika: in
             sonuc.gecmis,
             out_dir / f"isi_{ad.replace(' ', '_')}.png",
             pencere_saniye=60,
-            baslik=f"{ad} – {topoloji}",
+            baslik=f"{ad} - {topoloji}",
         )
         if topoloji == "single":
             try:

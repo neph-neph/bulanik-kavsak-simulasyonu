@@ -77,7 +77,7 @@ def _sumocfg_xml(net_dosyasi: str, rou_dosyasi: str, sure: float) -> str:
 
 
 def _netconvert_calistir(out_dir: Path, baz_ad: str = "network") -> bool:
-    """netconvert varsa .nod + .edg → .net.xml derler."""
+    # netconvert ile .nod + .edg dosyalarini .net.xml olarak derler
     try:
         proc = subprocess.run(
             [

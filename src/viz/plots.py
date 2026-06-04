@@ -58,7 +58,7 @@ def kuyruk_zaman_grafigi(
         ax.plot(bu_kavsak["zaman_saniye"], bu_kavsak[sutun], label=ad, alpha=0.85)
     ax.set_xlabel("Zaman (sn)")
     ax.set_ylabel(f"{yon} kuyruk uzunluğu")
-    ax.set_title(f"{kavsak_id} – {yon} yönü kuyruk değişimi")
+    ax.set_title(f"{kavsak_id} - {yon} yönü kuyruk değişimi")
     ax.legend()
     fig.tight_layout()
     fig.savefig(cikti_yolu, dpi=150)
